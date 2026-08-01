@@ -34,21 +34,14 @@ export default function ProfilePage() {
   useEffect(() => {
     async function loadProfile() {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        const res = await fetch('/api/profile');
+        const data = await res.json();
 
-        if (user) {
-          const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-
-          if (data) {
-            setProfile(data as UserProfile);
-            setValue('fullName', data.full_name || '');
-          }
+        if (res.ok && data.profile) {
+          setProfile(data.profile as UserProfile);
+          setValue('fullName', data.profile.full_name || '');
+        } else {
+          toast.error(data.error || 'Failed to load user profile');
         }
       } catch {
         toast.error('Failed to load user profile');
@@ -57,24 +50,26 @@ export default function ProfilePage() {
       }
     }
     loadProfile();
-  }, [supabase, setValue]);
+  }, [setValue]);
 
   const onUpdateProfile = async (data: UpdateProfileInput) => {
     if (!profile) return;
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ full_name: data.fullName })
-        .eq('id', profile.id);
+      const res = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const resData = await res.json();
 
-      if (error) {
-        toast.error(error.message || 'Failed to update profile');
+      if (!res.ok) {
+        toast.error(resData.error || 'Failed to update profile');
         setSaving(false);
         return;
       }
 
-      setProfile({ ...profile, full_name: data.fullName });
+      setProfile(resData.profile);
       toast.success('Profile updated successfully');
     } catch {
       toast.error('An error occurred while updating profile');

@@ -28,17 +28,15 @@ export default function AdminUsersPage() {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const res = await fetch('/api/admin/users');
+      const data = await res.json();
 
-      if (error) {
-        toast.error(error.message || 'Failed to load user records');
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to load user records');
         return;
       }
 
-      setUsers((data as UserProfile[]) || []);
+      setUsers(data.users || []);
     } catch {
       toast.error('An error occurred while fetching users');
     } finally {
