@@ -59,29 +59,76 @@ export default function DashboardPage() {
 
         if (isPaymentSuccess) {
           if (sessionId) {
+            // Secure production verification via server-side Stripe API
             await fetch(`/api/stripe/verify?session_id=${sessionId}`);
+          } else {
+            // Direct profile sync
+            await supabase
+              .from('profiles')
+              .update({ subscription_plan: 'pro' })
+              .eq('id', user.id);
           }
+
           toast.success('🎉 Payment successful! Welcome to DocVault Pro!', { id: 'stripe-success' });
           window.history.replaceState({}, '', '/dashboard');
         }
 
-        // Fetch Dashboard Data through Domain API Endpoint
-        const dashRes = await fetch('/api/dashboard');
-        const dashData = await dashRes.json();
+        // Fetch User Profile
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
 
-        if (!dashRes.ok || !dashData.profile) {
-          toast.error(dashData.error || 'Failed to load dashboard data');
-          return;
-        }
+        if (profileData) {
+          const userProf = profileData as UserProfile;
+          setProfile(userProf);
 
-        setProfile(dashData.profile);
+          if (userProf.role === 'admin') {
+            // Fetch Admin Dashboard Stats
+            const [
+              { count: usersCount },
+              { count: docsCount },
+              { count: freeCount },
+              { count: proCount },
+              { data: feedData },
+            ] = await Promise.all([
+              supabase.from('profiles').select('*', { count: 'exact', head: true }),
+              supabase.from('documents').select('*', { count: 'exact', head: true }),
+              supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'user').eq('subscription_plan', 'free'),
+              supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'user').eq('subscription_plan', 'pro'),
+              supabase
+                .from('documents')
+                .select('*, profiles(email, full_name)')
+                .order('created_at', { ascending: false })
+                .limit(5),
+            ]);
 
-        if (dashData.isAdmin) {
-          setAdminStats(dashData.adminStats);
-          setAdminActivityFeed(dashData.adminActivityFeed || []);
-        } else {
-          setUserDocsCount(dashData.userDocsCount || 0);
-          setRecentDocs(dashData.recentDocs || []);
+            setAdminStats({
+              totalUsers: usersCount || 0,
+              totalDocs: docsCount || 0,
+              freeUsers: freeCount || 0,
+              proUsers: proCount || 0,
+            });
+            setAdminActivityFeed((feedData as DocumentItem[]) || []);
+          } else {
+            // Fetch User Dashboard Stats
+            const [{ count: docsCount }, { data: docsData }] = await Promise.all([
+              supabase
+                .from('documents')
+                .select('*', { count: 'exact', head: true })
+                .eq('owner_id', user.id),
+              supabase
+                .from('documents')
+                .select('*')
+                .eq('owner_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(5),
+            ]);
+
+            setUserDocsCount(docsCount || 0);
+            setRecentDocs((docsData as DocumentItem[]) || []);
+          }
         }
       } catch {
         toast.error('Failed to load dashboard data');
